@@ -1,14 +1,22 @@
+import * as fs from "fs";
 import {ChatOpenAI} from "langchain/chat_models/openai";
-import {HumanChatMessage, SystemChatMessage} from "langchain/schema";
-
+import {HumanChatMessage, SystemChatMessage} from 'langchain/schema';
+import {CallbackManager} from "langchain/callbacks";
 import {Notice, TextComponent} from "obsidian";
 import {App, Editor, MarkdownView, Modal, Plugin, PluginSettingTab, Setting} from 'obsidian';
-
+import {OpenAIEmbeddings} from "langchain/embeddings/openai";
+import {RecursiveCharacterTextSplitter} from "langchain/text_splitter";
+import {OpenAI} from "langchain/llms/openai";
+import {Chroma} from "langchain/vectorstores/chroma";
+import {ConversationalRetrievalQAChain} from "langchain/chains";
+import {BufferMemory} from "langchain/memory";
 
 interface MyPluginSettings {
 	openAIKey: string;
 	model: string;
 }
+
+const COLLECTION_NAME = 'obsidian-notes';
 
 const DEFAULT_SETTINGS: MyPluginSettings = {
 	openAIKey: '',
@@ -36,6 +44,37 @@ export default class MyPlugin extends Plugin {
 			}
 		});
 
+		this.addCommand({
+			id: 'reindex-embeddings-from-notes',
+			name: 'Reindex embeddings from notes',
+			checkCallback: async (checking: boolean) => {
+				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
+				if (markdownView) {
+					if (!checking) {
+						console.log('Reindexing...')
+						const embeddings = new OpenAIEmbeddings({openAIApiKey: this.settings.openAIKey})
+						let vectorStore = new Chroma(embeddings, {collectionName: COLLECTION_NAME})
+						const collection = await vectorStore.ensureCollection();
+						if (!!collection) {
+							await vectorStore.index?.deleteCollection({name: COLLECTION_NAME})
+						}
+						await vectorStore.index?.createCollection({name: COLLECTION_NAME})
+
+						vectorStore = await Chroma.fromExistingCollection(embeddings, {collectionName: COLLECTION_NAME});
+
+						for (const file of this.app.vault.getMarkdownFiles().slice(0, 10)) {
+							const path = `${file.vault.adapter.basePath}/${file.path}`
+							const text = fs.readFileSync(path, "utf8");
+							const textSplitter = new RecursiveCharacterTextSplitter({chunkSize: 1000});
+							const docs = await textSplitter.createDocuments([text]);
+							await vectorStore.addDocuments(docs.map((it) => ({...it, metadata: {name: file.name.replace('.md', '')}})));
+						}
+					}
+					return true;
+				}
+			}
+		});
+
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new SampleSettingTab(this.app, this));
 	}
@@ -56,58 +95,106 @@ export default class MyPlugin extends Plugin {
 
 class ChatModal extends Modal {
 	messages: object[];
+	modalBody: any;
+	chat: any;
+	messagesContainer: any;
+	inputContainer: any;
+	input: any;
+	chain: any;
+
+	handleLLMNewToken(token: string) {
+		this.messages[this.messages.length - 1].content += token;
+		this.reloadHistory();
+	}
 
 	constructor(app: App, settings) {
 		super(app);
-		this.chat = new ChatOpenAI({temperature: 0, openAIApiKey: settings.openAIKey});
 		this.messages = [];
+		const handleNewToken = (token: string) => {
+			this.handleLLMNewToken(token)
+		}
+		const embeddings = new OpenAIEmbeddings({openAIApiKey: settings.openAIKey})
+		const vectorStore = new Chroma(embeddings, {collectionName: COLLECTION_NAME});
+
+		this.chat = new ChatOpenAI({
+			callbackManager: CallbackManager.fromHandlers({handleLLMNewToken: handleNewToken}),
+			streaming: true,
+			temperature: 0,
+			openAIApiKey: settings.openAIKey,
+		});
+
+		this.chain = ConversationalRetrievalQAChain.fromLLM(
+			this.chat,
+			vectorStore.asRetriever(),
+			{
+				memory: new BufferMemory({
+					memoryKey: "chat_history", // Must be set to "chat_history"
+					inputKey: 'question',
+					outputKey: 'text'
+				}),
+				returnSourceDocuments: true,
+			}
+		);
+
+		this.modalBody = this.contentEl.createDiv();
+		this.modalBody.addClass('chat-modal')
+		this.messagesContainer = this.modalBody.createDiv();
+		this.messagesContainer.addClass('messages-wrapper')
+
+		this.reloadHistory()
+
+		this.inputContainer = this.modalBody.createDiv();
+		this.input = new TextComponent(this.inputContainer).inputEl;
+		this.input.addClass('chat-model-text-input')
+
+	}
+
+	reloadHistory() {
+		this.messagesContainer.empty();
+		for (const message of this.messages) {
+			const messageElement = this.messagesContainer.createDiv();
+			messageElement.addClass(`message-item`)
+			messageElement.addClass(`message-item-${message.role}`)
+			messageElement.setText(`${message.role}: ${message.content}`);
+			if (message.role === 'ai') {
+				const responseUsedDocsElement = messageElement.createDiv()
+				responseUsedDocsElement.addClass('message-item-used-docs')
+				for (const doc of message.usedDocs){
+					const usedDocElement = responseUsedDocsElement.createEl('a');
+					usedDocElement.addClass('message-item-used-docs-item')
+					usedDocElement.addClass('internal-link')
+
+					usedDocElement.setText(doc.metadata.name);
+					const vaultName = 'zettelkasten';
+					usedDocElement.setAttribute('href', `obsidian://open?vault=${vaultName}&file=${doc.metadata.name}`);
+					usedDocElement.addEventListener('click', () => {
+						this.close()
+					})
+				}
+			}
+		}
 	}
 
 	onOpen() {
-		const modalBody = this.contentEl.createDiv();
-		modalBody.addClass('chat-modal')
-
-		const messagesContainer = modalBody.createDiv();
-		messagesContainer.addClass('messages-wrapper')
-
-		const showHistory = () => {
-			messagesContainer.empty();
-			for (const message of this.messages) {
-				const messageElement = messagesContainer.createDiv();
-				messageElement.addClass(`message-item`)
-				messageElement.addClass(`message-item-${message.role}`)
-				messageElement.setText(`${message.role}: ${message.content}`);
-			}
-		}
-
-		showHistory()
-
-		const inputContainer = modalBody.createDiv();
-		const input = new TextComponent(inputContainer).inputEl;
-		input.addClass('chat-model-text-input')
-
 		const handleSendMessage = async () => {
-			const newMessage = input.value.trim();
+			const newMessage = this.input.value.trim();
 			this.messages.push({role: 'user', content: newMessage})
-			showHistory();
-			const response = await this.chat.call([
-				new HumanChatMessage(
-					newMessage
-				),
-			]);
-			this.messages.push({role: 'ai', content: response.text})
-			showHistory();
+			this.messages.push({role: 'ai', content: '', usedDocs: []})
+			this.reloadHistory();
+			const response = await this.chain.call({question: newMessage});
+			this.messages[this.messages.length-1].usedDocs = response.sourceDocuments;
+			this.reloadHistory();
 		};
 		const handleInputKeyPress: EventHandler["keydown"] = (event: any) => {
 			if (event.key === "Enter") {
 				handleSendMessage();
 				event.preventDefault();
-				input.value = ''
+				this.input.value = ''
 			}
 		};
 
-		input.addEventListener("keydown", handleInputKeyPress);
-		input.focus();
+		this.input.addEventListener("keydown", handleInputKeyPress);
+		this.input.focus();
 	}
 
 	onClose() {
@@ -137,7 +224,6 @@ class SampleSettingTab extends PluginSettingTab {
 				.setPlaceholder('Enter your OpenAI API key')
 				.setValue(this.plugin.settings.openAIKey)
 				.onChange(async (value) => {
-					console.log('Secret: ' + value);
 					this.plugin.settings.openAIKey = value;
 					await this.plugin.saveSettings();
 				}));
