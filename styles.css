@@ -1,8 +1,25 @@
-/*
+.chat-modal {
+	user-select: text;
+}
+.messages-wrapper {
+	overflow-y: scroll;
+	max-height: 600px;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.chat-model-text-input {
+	width: 100%;
+	margin-top: 20px;
+}
 
-If your plugin does not need CSS, delete this file.
+.message-item {
+padding: 5px;
+}
 
-*/
+.message-item-ai {
+	padding-left: 20px;
+}
+
+.message-item-user {
+	opacity: 0.6;
+}
+
