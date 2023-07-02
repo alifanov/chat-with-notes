@@ -1,4 +1,4 @@
-# Obsidian Sample Plugin
+# Chat with notes
 
 This is a sample plugin for Obsidian (https://obsidian.md).
 

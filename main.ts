@@ -101,14 +101,16 @@ class ChatModal extends Modal {
 	inputContainer: any;
 	input: any;
 	chain: any;
+	vaultName: string;
 
 	handleLLMNewToken(token: string) {
 		this.messages[this.messages.length - 1].content += token;
 		this.reloadHistory();
 	}
 
-	constructor(app: App, settings) {
+	constructor(app: App, settings: MyPluginSettings) {
 		super(app);
+		this.vaultName = app.vault.getName();
 		this.messages = [];
 		const handleNewToken = (token: string) => {
 			this.handleLLMNewToken(token)
@@ -165,8 +167,7 @@ class ChatModal extends Modal {
 					usedDocElement.addClass('internal-link')
 
 					usedDocElement.setText(doc.metadata.name);
-					const vaultName = 'zettelkasten';
-					usedDocElement.setAttribute('href', `obsidian://open?vault=${vaultName}&file=${doc.metadata.name}`);
+					usedDocElement.setAttribute('href', `obsidian://open?vault=${this.vaultName}&file=${doc.metadata.name}`);
 					usedDocElement.addEventListener('click', () => {
 						this.close()
 					})
