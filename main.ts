@@ -62,7 +62,7 @@ export default class MyPlugin extends Plugin {
 
 						vectorStore = await Chroma.fromExistingCollection(embeddings, {collectionName: COLLECTION_NAME});
 
-						for (const file of this.app.vault.getMarkdownFiles().slice(0, 10)) {
+						for (const file of this.app.vault.getMarkdownFiles()) {
 							const path = `${file.vault.adapter.basePath}/${file.path}`
 							const text = fs.readFileSync(path, "utf8");
 							const textSplitter = new RecursiveCharacterTextSplitter({chunkSize: 1000});
