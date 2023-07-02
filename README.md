@@ -2,6 +2,10 @@
 
 Create embeddings from notes and chat with them within modal
 
+## Install plugin
+
+Clone this repo to your obsidian plugin folder and enabled it in Obsidian settings 
+
 ## Requirements
 
 ChromeDB for storage for embeddings (https://www.trychroma.com/) 
