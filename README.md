@@ -9,6 +9,7 @@ Clone this repo to your obsidian plugin folder and enabled it in Obsidian settin
 ## Requirements
 
 ChromeDB for storage for embeddings (https://www.trychroma.com/) 
+
 OpenAI API for chat feature and making embeddings (https://openai.com/)
 
 ### Create chroma local DB
