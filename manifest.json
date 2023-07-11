@@ -1,5 +1,5 @@
 {
-	"id": "obsidian-chat-with-note-plugin",
+	"id": "chat-with-notes",
 	"name": "Chat with notes",
 	"version": "1.2.0",
 	"minAppVersion": "0.15.0",
