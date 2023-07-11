@@ -4,6 +4,6 @@
 	"version": "1.2.0",
 	"minAppVersion": "0.15.0",
 	"description": "Plugin to enable chat with your notes using OpenAI embeddings and API",
-	"author": "Obsidian",
+	"author": "Aleksandr Lifanov",
 	"isDesktopOnly": false
 }
